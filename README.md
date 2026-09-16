@@ -10,16 +10,22 @@ Requirements: Node 22+, pnpm, Docker.
 
 ```bash
 pnpm install        # also generates the Prisma client (src/generated/prisma)
-cp .env.example .env
-pnpm db:up          # Postgres 16 on localhost:5432 (tengo/tengo/tenders)
-pnpm ingest         # applies Prisma migrations, then ingests fixtures/ (safe to re-run)
-pnpm start          # API on http://localhost:3000
-pnpm test           # parsers and deduplication, run against the real fixtures
-pnpm typecheck
-pnpm db:down        # stops Postgres and removes its volume
+pnpm dev            # starts Postgres, applies migrations, ingests fixtures/, serves the API on http://localhost:3000
 ```
 
-A database created before the move to Prisma has tables but no migration history, so `prisma migrate deploy` refuses it: run `pnpm db:down && pnpm db:up` once.
+`.env` is optional: the defaults match `docker-compose.yml`. Copy `.env.example` to `.env` to change them.
+
+| Command | Does |
+|---|---|
+| `pnpm dev` | `db:up` + `ingest` + `start`, safe to re-run |
+| `pnpm db:up` | Postgres 16 on localhost:5432 (tengo/tengo/tenders) |
+| `pnpm ingest` | applies Prisma migrations, then ingests fixtures/ (safe to re-run) |
+| `pnpm start` | API only, against an already ingested database |
+| `pnpm check` | typecheck + tests (parsers and deduplication, against the real fixtures) |
+| `pnpm db:reset` | deletes the database and rebuilds it from fixtures/ |
+| `pnpm db:down` | stops Postgres and removes its volume |
+
+If `pnpm ingest` fails with Prisma error P3005 (a database created before the move to Prisma, with tables but no migration history), run `pnpm db:reset`.
 
 ```bash
 curl 'localhost:3000/tenders?limit=20&offset=0'
