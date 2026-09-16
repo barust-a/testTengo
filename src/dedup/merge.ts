@@ -42,7 +42,7 @@ export function mergeNotices(notices: Notice[]): MergedTender {
     boampId: pick(boampIdOf),
     buyerReference: pick((notice) => notice.buyerReference),
     title: main.title,
-    // BOAMP often only carries a one-line note on pricing: keep the most complete description.
+    // Sources may summarize the same consultation differently: keep the most complete description.
     description: ordered
       .map((notice) => notice.description)
       .reduce<string | null>((best, text) => (text && text.length > (best?.length ?? 0) ? text : best), null),
