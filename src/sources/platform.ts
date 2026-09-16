@@ -31,8 +31,10 @@ function cellText(cell: { text(): string }): string | null {
   return cleanText(cell.text().replace(/\s+/g, ' ').replaceAll(LINE_BREAK, '\n'));
 }
 
-function fullYear(year: string): number {
-  return year.length === 2 ? 2000 + Number(year) : Number(year);
+/** Reads the FRENCH_DATE groups a pattern starts with; two-digit years are in the 2000s. */
+function frenchDate(match: RegExpMatchArray): { year: number; month: string; day: string } {
+  const [, day, month, year] = match;
+  return { year: year.length === 2 ? 2000 + Number(year) : Number(year), month, day };
 }
 
 function cpvCodesIn(text: string | null): string[] {
@@ -118,8 +120,10 @@ export function parsePlatformNotice(html: string, page: PlatformPage): Notice {
     throw new Error(`Platform page ${page.file} lacks an id, a title or a buyer name`);
   }
 
-  const deadline = valueOf('Offres')?.match(DEADLINE);
-  const sentOn = rows.map((row) => row.text ?? '').join('\n').match(SENT_FOR_PUBLICATION);
+  const deadlineMatch = valueOf('Offres')?.match(DEADLINE);
+  const sentMatch = rows.map((row) => row.text ?? '').join('\n').match(SENT_FOR_PUBLICATION);
+  const sentOn = sentMatch && frenchDate(sentMatch);
+  const deadline = deadlineMatch && { ...frenchDate(deadlineMatch), hour: +deadlineMatch[4], minute: +deadlineMatch[5] };
   const procedure = valueOf('Mode');
   const nuts = valueOf('Code NUTS');
 
@@ -133,9 +137,9 @@ export function parsePlatformNotice(html: string, page: PlatformPage): Notice {
     title,
     description: valueOf('Description') ?? valueOf('Quantité ou étendue'),
     buyer: { name: buyerName, ...buyer },
-    publicationDate: sentOn ? `${fullYear(sentOn[3])}-${sentOn[2]}-${sentOn[1]}` : null,
+    publicationDate: sentOn ? `${sentOn.year}-${sentOn.month}-${sentOn.day}` : null,
     responseDeadline: deadline
-      ? parisLocalToDate(fullYear(deadline[3]), +deadline[2], +deadline[1], +deadline[4], +deadline[5])
+      ? parisLocalToDate(deadline.year, +deadline.month, +deadline.day, deadline.hour, deadline.minute)
       : null,
     procedureType: procedure && /adapt/i.test(procedure) ? 'adapted' : procedure,
     marketNature: marketNatureOf(valueOf('Type de marché')),

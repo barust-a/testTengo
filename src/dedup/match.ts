@@ -20,7 +20,8 @@ const TITLE_SIMILARITY_THRESHOLD = 0.85;
 const PUBLICATION_DATE_TOLERANCE_DAYS = 3;
 const DAY_MS = 86_400_000;
 
-export function sourceKey(notice: Pick<Notice, 'source' | 'sourceId'>): string {
+/** `source:sourceId`, for a notice or for a stored source row. */
+export function sourceKey(notice: { source: string; sourceId: string }): string {
   return `${notice.source}:${notice.sourceId}`;
 }
 

@@ -71,7 +71,20 @@ export async function findTenderById(id: number): Promise<TenderDetail | null> {
   const tender = await prisma.tender.findUnique({
     where: { id },
     include: {
-      buyer: true,
+      // Only the public buyer columns: the match key is internal.
+      buyer: {
+        select: {
+          id: true,
+          name: true,
+          siret: true,
+          street: true,
+          postcode: true,
+          city: true,
+          email: true,
+          phone: true,
+          profileUrl: true,
+        },
+      },
       cpvCodes: { select: { code: true }, orderBy: { position: 'asc' } },
       lots: { select: { number: true, title: true, description: true, cpvCodes: true }, orderBy: { number: 'asc' } },
       sources: {
@@ -94,17 +107,7 @@ export async function findTenderById(id: number): Promise<TenderDetail | null> {
     procedureType: tender.procedureType,
     marketNature: tender.marketNature as MarketNature | null,
     nutsCode: tender.nutsCode,
-    buyer: {
-      id: Number(buyer.id),
-      name: buyer.name,
-      siret: buyer.siret,
-      street: buyer.street,
-      postcode: buyer.postcode,
-      city: buyer.city,
-      email: buyer.email,
-      phone: buyer.phone,
-      profileUrl: buyer.profileUrl,
-    },
+    buyer: { ...buyer, id: Number(buyer.id) },
     createdAt: tender.createdAt,
     updatedAt: tender.updatedAt,
     cpvCodes: tender.cpvCodes.map(({ code }) => code),

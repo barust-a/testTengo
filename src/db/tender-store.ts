@@ -18,29 +18,34 @@ export interface SaveResult {
   created: boolean;
 }
 
+function sourceWhere(notice: Notice) {
+  return { source_sourceId: { source: notice.source, sourceId: notice.sourceId } };
+}
+
 // Only tenders some match rule could accept, each branch served by an index: the same source record,
 // the same BOAMP notice, or the same buyer postcode with the same deadline (required by the other rules).
 // Three queries rather than one `OR`: Prisma renders the relation filter as a correlated EXISTS, and an
 // OR over it makes Postgres filter every tender. Null values are skipped, since in Prisma
 // `{ boampId: null }` would match every tender without a BOAMP id.
-async function findCandidates(tx: Tx, notice: Notice): Promise<TenderCandidate[]> {
+async function findCandidateIds(tx: Tx, notice: Notice): Promise<bigint[]> {
   const boampId = boampIdOf(notice);
   const { responseDeadline } = notice;
   const { postcode } = notice.buyer;
 
-  const source = await tx.tenderSource.findUnique({
-    where: { source_sourceId: { source: notice.source, sourceId: notice.sourceId } },
-    select: { tenderId: true },
-  });
+  const source = await tx.tenderSource.findUnique({ where: sourceWhere(notice), select: { tenderId: true } });
   const sameBoampId =
     boampId === null ? null : await tx.tender.findUnique({ where: { boampId }, select: { id: true } });
   const sameDeadline =
     responseDeadline === null || postcode === null
       ? []
       : await tx.tender.findMany({ where: { responseDeadline, buyer: { postcode } }, select: { id: true } });
-  const ids = [source?.tenderId, sameBoampId?.id, ...sameDeadline.map(({ id }) => id)].filter(
+  return [source?.tenderId, sameBoampId?.id, ...sameDeadline.map(({ id }) => id)].filter(
     (id): id is bigint => id !== undefined,
   );
+}
+
+async function findCandidates(tx: Tx, notice: Notice): Promise<TenderCandidate[]> {
+  const ids = await findCandidateIds(tx, notice);
   if (ids.length === 0) return [];
 
   const tenders = await tx.tender.findMany({
@@ -59,7 +64,7 @@ async function findCandidates(tx: Tx, notice: Notice): Promise<TenderCandidate[]
 
   return tenders.map((tender) => ({
     id: Number(tender.id),
-    sourceKeys: tender.sources.map(({ source, sourceId }) => `${source}:${sourceId}`),
+    sourceKeys: tender.sources.map(sourceKey),
     boampId: tender.boampId,
     buyerPostcode: tender.buyer.postcode,
     buyerReference: tender.buyerReference,
@@ -116,9 +121,10 @@ async function upsertBuyer(tx: Tx, buyer: Buyer): Promise<bigint> {
   return id;
 }
 
-function tenderData(buyerId: bigint, tender: MergedTender) {
+/** Upserts the buyer and builds the tender row data to create or update from it. */
+async function resolveTenderData(tx: Tx, tender: MergedTender) {
   return {
-    buyerId,
+    buyerId: await upsertBuyer(tx, tender.buyer),
     title: tender.title,
     description: tender.description,
     buyerReference: tender.buyerReference,
@@ -129,12 +135,6 @@ function tenderData(buyerId: bigint, tender: MergedTender) {
     marketNature: tender.marketNature,
     nutsCode: tender.nutsCode,
   };
-}
-
-/** Upserts the buyer and builds the tender row data to create or update from it. */
-async function resolveTenderData(tx: Tx, tender: MergedTender) {
-  const buyerId = await upsertBuyer(tx, tender.buyer);
-  return tenderData(buyerId, tender);
 }
 
 async function insertTender(tx: Tx, tender: MergedTender): Promise<number> {
@@ -164,7 +164,7 @@ async function upsertSource(tx: Tx, tenderId: number, notice: Notice) {
   // Round-trip through JSON so dates are stored as ISO strings, as loadNotices expects.
   const stored = JSON.parse(JSON.stringify(notice)) as Prisma.InputJsonObject;
   await tx.tenderSource.upsert({
-    where: { source_sourceId: { source: notice.source, sourceId: notice.sourceId } },
+    where: sourceWhere(notice),
     create: {
       tenderId,
       source: notice.source,

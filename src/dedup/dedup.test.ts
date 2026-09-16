@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Notice } from '../domain/notice.js';
-import { buyerMatchKey, findMatchingTender, type TenderCandidate } from './match.js';
+import { boampIdOf, buyerMatchKey, findMatchingTender, sourceKey, type TenderCandidate } from './match.js';
 import { mergeNotices } from './merge.js';
 
 function makeNotice(overrides: Partial<Notice> = {}): Notice {
@@ -38,8 +38,8 @@ function makeNotice(overrides: Partial<Notice> = {}): Notice {
 function candidateFrom(id: number, notice: Notice): TenderCandidate {
   return {
     id,
-    sourceKeys: [`${notice.source}:${notice.sourceId}`],
-    boampId: notice.source === 'BOAMP' ? notice.sourceId : notice.linkedBoampId,
+    sourceKeys: [sourceKey(notice)],
+    boampId: boampIdOf(notice),
     buyerPostcode: notice.buyer.postcode,
     buyerReference: notice.buyerReference,
     title: notice.title,
