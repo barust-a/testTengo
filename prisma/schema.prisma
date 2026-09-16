@@ -1,0 +1,104 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// The public buyer (contracting authority) that publishes tenders, shared by all its tenders.
+model Buyer {
+  id         BigInt   @id @default(autoincrement())
+  // Normalized name + postcode. BOAMP publishes no SIRET, so it cannot be the identity.
+  matchKey   String   @unique @map("match_key")
+  name       String
+  siret      String?
+  street     String?
+  postcode   String?
+  city       String?
+  email      String?
+  phone      String?
+  profileUrl String?  @map("profile_url")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  tenders    Tender[]
+
+  @@map("buyers")
+}
+
+// The deduplicated tender shown to users, rebuilt from its source notices at every ingestion.
+model Tender {
+  id               BigInt          @id @default(autoincrement())
+  buyerId          BigInt          @map("buyer_id")
+  title            String
+  description      String?
+  buyerReference   String?         @map("buyer_reference")
+  boampId          String?         @unique @map("boamp_id")
+  publicationDate  DateTime?       @map("publication_date") @db.Date
+  responseDeadline DateTime?       @map("response_deadline") @db.Timestamptz
+  procedureType    String?         @map("procedure_type")
+  // 'works' | 'supplies' | 'services', enforced by a CHECK constraint in the migration.
+  marketNature     String?         @map("market_nature")
+  nutsCode         String?         @map("nuts_code")
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  buyer            Buyer           @relation(fields: [buyerId], references: [id])
+  sources          TenderSource[]
+  lots             Lot[]
+  cpvCodes         TenderCpvCode[]
+
+  @@index([buyerId], map: "tenders_buyer_id_idx")
+  // Same order as GET /tenders (NULLS LAST is set in the migration).
+  @@index([publicationDate(sort: Desc), id(sort: Desc)], map: "tenders_publication_date_idx")
+  // Deduplication candidates: the rules on buyer reference and on title both require the same deadline.
+  @@index([responseDeadline], map: "tenders_response_deadline_idx")
+  @@map("tenders")
+}
+
+// Provenance: one row per notice, per source.
+model TenderSource {
+  id         BigInt    @id @default(autoincrement())
+  tenderId   BigInt    @map("tender_id")
+  source     String
+  sourceId   String    @map("source_id")
+  url        String?
+  fetchedAt  DateTime? @map("fetched_at") @db.Timestamptz
+  // The notice as normalized from this source; tenders are merged from these.
+  notice     Json
+  ingestedAt DateTime  @default(now()) @map("ingested_at") @db.Timestamptz
+  tender     Tender    @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@unique([source, sourceId])
+  @@index([tenderId], map: "tender_sources_tender_id_idx")
+  @@map("tender_sources")
+}
+
+// A lot: a separately awarded part of a tender, numbered within it.
+model Lot {
+  id          BigInt   @id @default(autoincrement())
+  tenderId    BigInt   @map("tender_id")
+  number      Int
+  title       String?
+  description String?
+  cpvCodes    String[] @default([]) @map("cpv_codes")
+  tender      Tender   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@unique([tenderId, number])
+  @@map("lots")
+}
+
+// The CPV codes (EU procurement vocabulary) classifying a tender.
+// A table rather than an array: streams and alerts filter tenders by CPV code.
+model TenderCpvCode {
+  tenderId BigInt @map("tender_id")
+  code     String
+  // 0 is the main code.
+  position Int    @db.SmallInt
+  tender   Tender @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+
+  @@id([tenderId, code])
+  @@index([code], map: "tender_cpv_codes_code_idx")
+  @@map("tender_cpv_codes")
+}

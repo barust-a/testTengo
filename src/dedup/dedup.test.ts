@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Notice } from '../domain/notice.js';
-import { findMatchingTender, type TenderCandidate } from './match.js';
+import { buyerMatchKey, findMatchingTender, type TenderCandidate } from './match.js';
 import { mergeNotices } from './merge.js';
 
 function makeNotice(overrides: Partial<Notice> = {}): Notice {
@@ -53,6 +53,28 @@ const platformPage = makeNotice({
   source: 'marches-publics.info',
   sourceId: '2024176095',
   linkedBoampId: '24-73088',
+});
+
+describe('buyerMatchKey', () => {
+  it('ignores accents, case and punctuation in the name', () => {
+    expect(buyerMatchKey({ name: 'Département du Doubs', postcode: '25031' })).toBe(
+      buyerMatchKey({ name: 'DEPARTEMENT DU DOUBS.', postcode: '25031' }),
+    );
+  });
+
+  it('tells apart buyers with the same name in different postcodes', () => {
+    expect(buyerMatchKey({ name: 'Mairie', postcode: '25000' })).not.toBe(
+      buyerMatchKey({ name: 'Mairie', postcode: '39000' }),
+    );
+  });
+
+  it('accepts a missing postcode', () => {
+    expect(buyerMatchKey({ name: 'Mairie', postcode: null })).toBe('MAIRIE|');
+  });
+
+  it('rejects a name with no letter or digit', () => {
+    expect(() => buyerMatchKey({ name: ' — ', postcode: '25000' })).toThrow();
+  });
 });
 
 describe('findMatchingTender', () => {

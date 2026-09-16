@@ -1,4 +1,4 @@
-import type { Notice } from '../domain/notice.js';
+import type { Buyer, Notice } from '../domain/notice.js';
 import { matchKey, words } from '../lib/text.js';
 
 /** A stored tender, reduced to what matching needs. */
@@ -22,6 +22,16 @@ const DAY_MS = 86_400_000;
 
 export function sourceKey(notice: Pick<Notice, 'source' | 'sourceId'>): string {
   return `${notice.source}:${notice.sourceId}`;
+}
+
+/**
+ * Identity of a buyer: normalized name + postcode. BOAMP publishes no SIRET, so it cannot be the identity.
+ * Throws when the name has no letter or digit, rather than merging every such buyer of a postcode into one.
+ */
+export function buyerMatchKey(buyer: Pick<Buyer, 'name' | 'postcode'>): string {
+  const name = matchKey(buyer.name);
+  if (name === null) throw new Error(`Buyer name "${buyer.name}" cannot identify a buyer`);
+  return `${name}|${buyer.postcode ?? ''}`;
 }
 
 export function boampIdOf(notice: Notice): string | null {

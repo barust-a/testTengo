@@ -1,6 +1,6 @@
 # Tengo Backend Case
 
-Ingests tender notices from two sources (BOAMP XML, marches-publics.info HTML), deduplicates them into one tender per real consultation while keeping the provenance, and serves them over a small Express API.
+Ingests tender notices from two sources (BOAMP XML, marches-publics.info HTML), deduplicates them into one tender per real consultation while keeping the provenance, and serves them over a small Express API. Postgres is accessed through Prisma.
 
 On the provided fixtures: **22 notices → 13 tenders**, 9 of them published on both sources.
 
@@ -9,15 +9,17 @@ On the provided fixtures: **22 notices → 13 tenders**, 9 of them published on 
 Requirements: Node 22+, pnpm, Docker.
 
 ```bash
-pnpm install
+pnpm install        # also generates the Prisma client (src/generated/prisma)
 cp .env.example .env
 pnpm db:up          # Postgres 16 on localhost:5432 (tengo/tengo/tenders)
-pnpm ingest         # creates the tables if needed, then ingests fixtures/ (safe to re-run)
+pnpm ingest         # applies Prisma migrations, then ingests fixtures/ (safe to re-run)
 pnpm start          # API on http://localhost:3000
 pnpm test           # parsers and deduplication, run against the real fixtures
 pnpm typecheck
 pnpm db:down        # stops Postgres and removes its volume
 ```
+
+A database created before the move to Prisma has tables but no migration history, so `prisma migrate deploy` refuses it: run `pnpm db:down && pnpm db:up` once.
 
 ```bash
 curl 'localhost:3000/tenders?limit=20&offset=0'
@@ -27,6 +29,9 @@ curl localhost:3000/tenders/1
 ## Layout
 
 ```
+prisma/
+  schema.prisma               data model
+  migrations/                 SQL migrations, applied by `pnpm ingest` (or `pnpm db:migrate`)
 src/
   domain/notice.ts            normalized notice: the contract between parsers and everything else
   sources/boamp.ts            BOAMP XML → Notice
@@ -34,9 +39,10 @@ src/
   sources/fixtures.ts         reads fixtures/, reports unparseable files instead of aborting
   dedup/match.ts              finds the tender a notice belongs to
   dedup/merge.ts              builds a tender from all of its notices
-  db/schema.sql               tables, applied by `pnpm ingest`
+  db/prisma.ts                Prisma client (pg driver adapter)
+  db/calendar-date.ts         date column ↔ YYYY-MM-DD
   db/tender-store.ts          saves a notice and rebuilds its tender in one transaction
-  api/tenders-repository.ts   SQL behind the two routes
+  api/tenders-repository.ts   Prisma queries behind the two routes
   lib/                        text cleanup, Europe/Paris wall-clock → UTC
   ingest.ts, server.ts        entry points
 ```
